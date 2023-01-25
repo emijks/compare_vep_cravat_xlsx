@@ -14,7 +14,7 @@ def main():
     logger = logging.getLogger()
 
     parser = argparse.ArgumentParser(
-        description="Compare vep.xlsx vs cravat.xlsx",
+        description="Compare VEP vs OpenCRAVAT excel report",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument(
@@ -92,6 +92,7 @@ def main():
             ('gnomADg3_NHOM_MAX_x', 'gnomADg3_NHOM_MAX_y'): 'float',
             ('CSQ_CLIN_SIG', 'ClinSig'): 'str_clinsig',
             ('Panel_x', 'Panel_y'): 'str',
+            ('CSQ_PUBMED', 'Pubmed'): 'str_list_pubmed',
             ('OMIM_LINK_x', 'OMIM_LINK_y'): 'float_omim',
             ('OMIM_PHE_HPO_x', 'OMIM_PHE_HPO_y'): 'str_list_2',
             ('HPO_Term_Name', 'HPO_Term'): 'str_list_2',
@@ -174,18 +175,20 @@ def colorize_values(series: pd.Series, comparison_cols: dict) -> list:
         if pair[0] == pair[1]:
             colors += ['color: gray'] * 2
         elif 'list' in dtype:
-            if is_equal_set(pair[0], pair[1]):
+            if is_equal_set(pair[0], pair[1]): # grey
                 colors += ['color: grey'] * 2
-            elif is_subset(pair[0], pair[1]):
+            elif is_subset(pair[0], pair[1])['of_cravat']: # green
+                colors += ['color: #009415'] * 2
+            elif is_subset(pair[0], pair[1])['of_vep']: # red
                 colors += ['color: #f05300'] * 2
-            else:
-                colors += ['color: black'] * 2
+            else: # black
+                colors += ['color: black'] * 2 
         elif dtype == 'float':
-            if np.round(pair[0], 2) == np.round(pair[1], 2):
+            if np.round(pair[0], 2) == np.round(pair[1], 2): # gray
                 colors += ['color: gray'] * 2
-            else:
+            else: # black
                 colors += ['color: black'] * 2
-        else:
+        else: # black
             colors += ['color: black'] * 2
     return colors
 
@@ -203,6 +206,8 @@ def normalize_pair(pair: tuple, dtype: str) -> tuple:
         pair = normalize_str_list(pair, '|')
     elif dtype == 'str_list_hgvsp':
         pair = normalize_hgvsp(pair)
+    elif dtype == 'str_list_pubmed':
+        pair = normalize_pubmed(pair)
     elif dtype == 'str_clinsig':
         pair = normalize_clinsig(pair)
     elif dtype == 'float_omim':
@@ -235,16 +240,25 @@ def normalize_hgvsp(pair: tuple) -> tuple:
     return (hgvsp1, hgvsp2)
 
 
+def normalize_pubmed(pair: tuple) -> tuple:
+    pubmed_vep = ','.join(filter(None, pair[0].split('&')))
+    pubmed_cravat = ','.join(filter(None, pair[1].split(', ')))
+    return (pubmed_vep, pubmed_cravat)
+
+
 def is_equal_set(str1: str, str2: str) -> bool:
     set1 = set(filter(None, str(str1).split(',')))
     set2 = set(filter(None, str(str2).split(',')))
     return set1 == set2
 
 
-def is_subset(str1: str, str2: str) -> bool:
+def is_subset(str1: str, str2: str) -> dict:
     set1 = set(filter(None, str(str1).split(',')))
     set2 = set(filter(None, str(str2).split(',')))
-    return set1.issubset(set2) or set2.issubset(set1)
+    return {
+        'of_cravat': set1.issubset(set2),
+        'of_vep': set2.issubset(set1)
+    }
 
 
 # ========= utils ===========
