@@ -18,11 +18,11 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument(
-        "-v", "--vep", required=True,
+        "-v", "--vep-path", required=True,
         help="Path to VEP annotated Excel file",
     )
     parser.add_argument(
-        "-c", "--cravat", required=True,
+        "-c", "--cravat-path", required=True,
         help="Path to OpenCRAVAT annotated Excel file",
     )
     parser.add_argument(
@@ -39,8 +39,8 @@ def main():
     )
     args = parser.parse_args()
 
-    vep_path = os.path.abspath(args.vep)
-    cravat_path = os.path.abspath(args.cravat)
+    vep_path = os.path.abspath(args.vep_path)
+    cravat_path = os.path.abspath(args.cravat_path)
     output_path = os.path.abspath(args.output)
 
     if not all([
@@ -89,7 +89,7 @@ def main():
             ('CSQ_BIOTYPE', 'BIOTYPE'): 'str_list',
             ('MGI_x', 'MGI_y'): 'str_list_3',
             ('gnomADg3_MAX_x', 'gnomADg3_MAX_y'): 'float',
-            ('gnomADg3_NHOM_MAX_x', 'gnomADg3_NHOM_MAX_y'): 'float',
+            ('gnomADg3_NHOM_MAX', 'gnomADg3_nhomalt'): 'float',
             ('CSQ_CLIN_SIG', 'ClinSig'): 'str_clinsig',
             ('Panel_x', 'Panel_y'): 'str',
             ('CSQ_PUBMED', 'Pubmed'): 'str_list_pubmed',
@@ -119,7 +119,7 @@ def main():
             .apply(colorize_values, axis=1, comparison_cols=comparison_cols)
 
         logger.warning('Writing xlsx ...')
-        merged_ordered_df.to_excel(output_path, index=True)
+        merged_ordered_df.to_excel(output_path, index=False, freeze_panes=(1, 5))
 
         logger.warning(f'Done: {output_path}\n')
 
@@ -204,6 +204,8 @@ def normalize_pair(pair: tuple, dtype: str) -> tuple:
         pair = normalize_str_list(pair, ', ')
     elif dtype == 'str_list_3':
         pair = normalize_str_list(pair, '|')
+    elif dtype == 'str_list_feat':
+        pair = normalize_feature(pair)
     elif dtype == 'str_list_hgvsp':
         pair = normalize_hgvsp(pair)
     elif dtype == 'str_list_pubmed':
@@ -218,6 +220,12 @@ def normalize_pair(pair: tuple, dtype: str) -> tuple:
 def normalize_str_list(pair: tuple, delimiter=',') -> tuple:
     str1 = ','.join(filter(None, pair[0].split(delimiter)))
     str2 = ','.join(filter(None, pair[1].split(delimiter)))
+    return (str1, str2)
+
+
+def normalize_feature(pair: tuple) -> tuple:
+    str1 = ','.join([tr for tr in pair[0].split(',') if tr.startswith('ENST')])
+    str2 = pair[1]
     return (str1, str2)
 
 
