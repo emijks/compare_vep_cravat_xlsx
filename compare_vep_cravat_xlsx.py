@@ -50,11 +50,26 @@ def main():
     ]):
         sys.exit(1)
 
-    try:
-        logger.warning('\nReading xlsx ...')
-        vep_df = xlsx2df(vep_path, 'data', ['POS', 'GCards', 'CSQ_Existing_variation', 'GNOMAD', 'OMIM_LINK'])
-        cravat_df = xlsx2df(cravat_path, 'Variant', ['POS', 'GCards', 'Existing_variation', 'GNOMAD', 'OMIM_LINK'])
 
+    try:
+        # Reading input xlsx files
+        logger.warning('\nReading xlsx ...')
+        vep_df = xlsx2df(
+            file_name=vep_path,
+            sheet_name='data',
+            hyperlink_function_columns=['POS', 'GCards', 'CSQ_Existing_variation', 'GNOMAD', 'OMIM_LINK'],
+            value_function_columns=['CSQ_CADD_PHRED']
+        )
+        cravat_df = xlsx2df(
+            file_name=cravat_path,
+            sheet_name='Variant',
+            hyperlink_function_columns=['POS', 'GCards', 'Existing_variation', 'GNOMAD', 'OMIM_LINK'],
+            value_function_columns=['cadd_phred']
+        )
+
+
+        # Merging vep and cravat pandas.DataFrames
+        logger.warning('Merging ...')
         merge_on_cols = [
             'CHROM',
             'POS',
@@ -63,21 +78,22 @@ def main():
             'GCards'  
         ]
 
-        logger.warning('Merging ...')
         merged_df = pd.merge(
             vep_df,
             cravat_df,
             how=args.merge,
             left_on=merge_on_cols,
-            right_on=merge_on_cols
+            right_on=merge_on_cols,
+            suffixes=('_vep', '_cravat')
         )
 
+        # Set comparison column pairs and custom dtypes for normalization style
         comparison_cols = {
-            ('GT_x', 'GT_y'): 'str',
-            ('VAF_x', 'VAF_y'): 'float',
+            ('GT_vep', 'GT_cravat'): 'str',
+            ('VAF_vep', 'VAF_cravat'): 'float',
             ('CSQ_Existing_variation', 'Existing_variation'): 'str',
-            ('GeneRegion_x', 'GeneRegion_y'): 'str_list',
-            ('VariantType_x', 'VariantType_y'): 'str',
+            ('GeneRegion_vep', 'GeneRegion_cravat'): 'str_list',
+            ('VariantType_vep', 'VariantType_cravat'): 'str',
             ('CSQ_Consequence', 'Consequence'): 'str_list',
             ('CSQ_Feature', 'Feature'): 'str_list',
             ('CSQ_SpliceRegion', 'SpliceRegion'): 'str_list',
@@ -87,14 +103,14 @@ def main():
             ('CSQ_HGVSp', 'HGVSp'): 'str_list_hgvsp',
             ('CSQ_HGVSg', 'HGVSg'): 'str',
             ('CSQ_BIOTYPE', 'BIOTYPE'): 'str_list',
-            ('MGI_x', 'MGI_y'): 'str_list_3',
-            ('gnomADg3_MAX_x', 'gnomADg3_MAX_y'): 'float',
+            ('MGI_vep', 'MGI_cravat'): 'str_list_3',
+            ('gnomADg3_MAX_vep', 'gnomADg3_MAX_cravat'): 'float',
             ('gnomADg3_NHOM_MAX', 'gnomADg3_nhomalt'): 'float',
             ('CSQ_CLIN_SIG', 'ClinSig'): 'str_clinsig',
-            ('Panel_x', 'Panel_y'): 'str',
+            ('Panel_vep', 'Panel_cravat'): 'str',
             ('CSQ_PUBMED', 'Pubmed'): 'str_list_pubmed',
-            ('OMIM_LINK_x', 'OMIM_LINK_y'): 'float_omim',
-            ('OMIM_PHE_HPO_x', 'OMIM_PHE_HPO_y'): 'str_list_2',
+            ('OMIM_LINK_vep', 'OMIM_LINK_cravat'): 'float_omim',
+            ('OMIM_PHE_HPO_vep', 'OMIM_PHE_HPO_cravat'): 'str_list_2',
             ('HPO_Term_Name', 'HPO_Term'): 'str_list_2',
             ('HPO_inheritance', 'HPO_Inheritance'): 'str',
             ('CSQ_CADD_PHRED', 'cadd_phred'): 'float',
@@ -107,17 +123,23 @@ def main():
     
         merged_ordered_df = merged_df[ordered_columns]
 
+
+        # Dropping equal values of each comparison column pair (optional)
         if args.drop:
             logger.warning('Dropping equal ...')
             merged_ordered_df = merged_ordered_df \
                 .apply(drop_equal, axis=1, result_type=None, comparison_cols=comparison_cols)
 
+
+        # Colorizing values of each comparison column pair
         logger.warning('Colorizing ...')
         merged_ordered_df = merged_ordered_df.style \
             .set_properties(**{'background-color': '#fbfaea'}, subset=merged_ordered_df.columns[5::4]) \
             .set_properties(**{'background-color': '#fbfaea'}, subset=merged_ordered_df.columns[6::4]) \
             .apply(colorize_values, axis=1, comparison_cols=comparison_cols)
 
+
+        # Writing output xlsx
         logger.warning('Writing xlsx ...')
         merged_ordered_df.to_excel(output_path, index=False, freeze_panes=(1, 5))
 
@@ -132,25 +154,43 @@ def main():
 def xlsx2df(
     file_name: str,
     sheet_name: str,
-    columns_to_parse: list[str],
+    hyperlink_function_columns: list[str],
+    value_function_columns: list[str],
     row_header: int = 1
 ) -> pd.DataFrame:
 
     df = pd.read_excel(file_name, sheet_name)
     ws = openpyxl.load_workbook(file_name)[sheet_name]
-    for column in columns_to_parse:
+    for column in hyperlink_function_columns:
         row_offset = row_header + 1
         column_index = list(df.columns).index(column) + 1
         df[column] = [
-            extract_hyperlink_value(ws.cell(row=row_offset + i, column=column_index))
+            extract_hyperlink_function_value(ws.cell(row=row_offset + i, column=column_index))
             for i in range(len(df[column]))
         ]
+    for column in value_function_columns:
+        row_offset = row_header + 1
+        column_index = list(df.columns).index(column) + 1
+        df[column] = [
+            extract_value_function_value(ws.cell(row=row_offset + i, column=column_index))
+            for i in range(len(df[column]))
+        ] 
     return df
 
 
-def extract_hyperlink_value(cell):
+def extract_hyperlink_function_value(cell):
     try:
         return cell.value.split(',')[-1].lstrip().lstrip('"').rstrip('")')
+    except:
+        return None
+
+
+def extract_value_function_value(cell):
+    try:
+        left_str_idx = cell.value.find('(')
+        right_str_idx = cell.value.find(')')
+        extracted_number = float(cell.value[left_str_idx+2:right_str_idx-1].replace(',', '.'))
+        return extracted_number
     except:
         return None
 
@@ -201,9 +241,9 @@ def normalize_pair(pair: tuple, dtype: str) -> tuple:
     if dtype == 'str_list':
         pair = normalize_str_list(pair)
     elif dtype == 'str_list_2':
-        pair = normalize_str_list(pair, ', ')
+        pair = normalize_str_list(pair, ', ', ', ')
     elif dtype == 'str_list_3':
-        pair = normalize_str_list(pair, '|')
+        pair = normalize_str_list(pair, '|', ';')
     elif dtype == 'str_list_feat':
         pair = normalize_feature(pair)
     elif dtype == 'str_list_hgvsp':
@@ -217,9 +257,9 @@ def normalize_pair(pair: tuple, dtype: str) -> tuple:
     return pair
 
 
-def normalize_str_list(pair: tuple, delimiter=',') -> tuple:
-    str1 = ','.join(filter(None, pair[0].split(delimiter)))
-    str2 = ','.join(filter(None, pair[1].split(delimiter)))
+def normalize_str_list(pair: tuple, delimiter_vep=',', delimiter_cravat=',') -> tuple:
+    str1 = ','.join(filter(None, pair[0].split(delimiter_vep)))
+    str2 = ','.join(filter(None, pair[1].split(delimiter_cravat)))
     return (str1, str2)
 
 
